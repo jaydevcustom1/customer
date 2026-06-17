@@ -195,7 +195,7 @@ async function main() {
 
   // 5. Create Tables & QR Codes
   const tableNumbers = ['Table 1', 'Table 2', 'Table 3', 'Table 4', 'Table 5'];
-  const clientOrigin = 'http://localhost:3000'; // Default Dev Port
+  const clientOrigin = process.env.CLIENT_URL || 'http://localhost:3000'; // Read from env if available
 
   for (const tabNum of tableNumbers) {
     const qrData = `${clientOrigin}/menu?table=${encodeURIComponent(tabNum)}`;

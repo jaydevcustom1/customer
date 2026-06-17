@@ -60,7 +60,36 @@ app.use((err, req, res, next) => {
   });
 });
 
+import prisma from './db.js';
+import QRCode from 'qrcode';
+
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`Server is running on port ${PORT}`);
+  
+  // Auto-regenerate table QR codes to ensure they match CLIENT_URL (Netlify URL)
+  try {
+    const tables = await prisma.table.findMany();
+    const clientOrigin = process.env.CLIENT_URL || 'http://localhost:3000';
+    console.log(`Auto-regenerating QR codes with CLIENT_URL: ${clientOrigin}`);
+    for (const table of tables) {
+      const qrData = `${clientOrigin}/menu?table=${encodeURIComponent(table.tableNumber)}`;
+      const qrCodeBase64 = await QRCode.toDataURL(qrData, {
+        errorCorrectionLevel: 'H',
+        margin: 2,
+        width: 1000,
+        color: {
+          dark: '#0f172a',
+          light: '#ffffff'
+        }
+      });
+      await prisma.table.update({
+        where: { id: table.id },
+        data: { qrCode: qrCodeBase64 }
+      });
+    }
+    console.log('Successfully updated all table QR codes.');
+  } catch (error) {
+    console.error('Error auto-regenerating QR codes on startup:', error);
+  }
 });
