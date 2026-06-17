@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Local databases & logs
+*.db
+*.db-journal
+*.log
+server/prisma/dev.db
+server/prisma/dev.db-journal
+
+# Environment variables (Secrets)
+.env
+**/ .env
+.env.local
+.env.*.local
+
+# IDEs & System
+.DS_Store
+.idea/
+.vscode/
+Thumbs.db
+
+# Build outputs
+dist/
+**/dist/
+build/
+**/build/
+
+# Static Uploads
+server/public/uploads/

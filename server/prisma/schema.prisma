@@ -1,0 +1,129 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("ADMIN")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  auditLogs AuditLog[]
+}
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  status      Boolean   @default(true)
+  products    Product[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Product {
+  id                String         @id @default(uuid())
+  categoryId        String
+  category          Category       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name              String
+  description       String?
+  price             Decimal        
+  stock             Int            @default(0)
+  image             String?        // URL or local path
+  status            Boolean        @default(true) // availability_status
+  orderItems        OrderItem[]
+  inventoryLogs     InventoryLog[]
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+}
+
+model Table {
+  id          String   @id @default(uuid())
+  tableNumber String   @unique
+  qrCode      String   // URL or base64 representation of the QR code
+  status      String   @default("AVAILABLE") // AVAILABLE, OCCUPIED, RESERVED
+  orders      Order[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Order {
+  id            String      @id @default(uuid())
+  receiptNumber String      @unique // E.g. REC-170626-XXXX
+  customerName  String?
+  tableId       String
+  table         Table       @relation(fields: [tableId], references: [id])
+  status        String      @default("PENDING")
+  total         Decimal     
+  notes         String?
+  items         OrderItem[]
+  sales         Sale?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  quantity  Int
+  price     Decimal  
+  createdAt DateTime @default(now())
+}
+
+model InventoryLog {
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int
+  type      String
+  notes     String?
+  userId    String?
+  createdAt DateTime @default(now())
+}
+
+model Sale {
+  id        String   @id @default(uuid())
+  orderId   String   @unique
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount    Decimal  
+  createdAt DateTime @default(now())
+}
+
+model Customer {
+  id        String   @id @default(uuid())
+  name      String
+  phone     String?
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  ipAddress String?
+  timestamp DateTime @default(now())
+}
+
+model Setting {
+  id             String   @id @default(uuid())
+  restaurantName String   @default("E-Menu Bistro")
+  logo           String?
+  address        String?
+  phone          String?
+  tax            Decimal  @default(0.00) 
+  serviceFee     Decimal  @default(0.00) 
+  currency       String   @default("USD")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
