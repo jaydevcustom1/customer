@@ -47,6 +47,31 @@ export const CartProvider = ({ children }) => {
     fetchSettings();
   }, []);
 
+  // Auto-detect table query parameter from URL on any page entry
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tableParam = params.get('table');
+    if (tableParam) {
+      const fetchTable = async () => {
+        try {
+          const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+          const res = await axios.get(`${backendUrl}/api/tables`);
+          const tables = res.data;
+          const match = tables.find(t => t.tableNumber.toLowerCase() === tableParam.toLowerCase());
+          if (match) {
+            setTable(match.tableNumber, match.id);
+          } else {
+            setTable(tableParam, tableParam);
+          }
+        } catch (e) {
+          console.warn('Could not match table from database:', e);
+          setTable(tableParam, tableParam);
+        }
+      };
+      fetchTable();
+    }
+  }, []);
+
   // Save cart items to local storage
   useEffect(() => {
     localStorage.setItem('qr_cart_items', JSON.stringify(cartItems));
