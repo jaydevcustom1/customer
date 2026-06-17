@@ -11,16 +11,15 @@ export const authenticateToken = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'supersecretkeyforqrmenuapp2026');
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
-      select: { id: true, name: true, email: true, role: true }
-    });
-
-    if (!user) {
-      return res.status(403).json({ message: 'User no longer exists' });
-    }
-
-    req.user = user;
+    
+    // Set user details directly from the verified token payload to save database queries
+    req.user = {
+      id: decoded.id,
+      role: decoded.role,
+      name: decoded.name || '',
+      email: decoded.email || ''
+    };
+    
     next();
   } catch (error) {
     console.error('JWT Verification Error:', error);

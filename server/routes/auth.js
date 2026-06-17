@@ -76,7 +76,7 @@ router.post('/login', async (req, res) => {
 
     // Create JWT
     const token = jwt.sign(
-      { id: user.id, role: user.role },
+      { id: user.id, role: user.role, name: user.name, email: user.email },
       process.env.JWT_SECRET || 'supersecretkeyforqrmenuapp2026',
       { expiresIn: '7d' }
     );
