@@ -34,44 +34,42 @@ router.get('/summary', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), asyn
     const week = getStartOfWeek();
     const month = getStartOfMonth();
 
-    // 1. Revenue queries
-    const todaySales = await prisma.sale.aggregate({
-      where: { createdAt: { gte: today } },
-      _sum: { amount: true }
-    });
-
-    const weeklySales = await prisma.sale.aggregate({
-      where: { createdAt: { gte: week } },
-      _sum: { amount: true }
-    });
-
-    const monthlySales = await prisma.sale.aggregate({
+    // Fetch all sales since the start of the month in a single query
+    const monthlySalesData = await prisma.sale.findMany({
       where: { createdAt: { gte: month } },
-      _sum: { amount: true }
+      select: { amount: true, createdAt: true }
     });
 
-    // 2. Order count queries
-    const pendingCount = await prisma.order.count({
-      where: { status: 'PENDING' }
-    });
+    // Sum in memory to avoid multiple round-trips
+    let todayTotal = 0;
+    let weeklyTotal = 0;
+    let monthlyTotal = 0;
 
-    const completedCount = await prisma.order.count({
-      where: { status: 'COMPLETED' }
-    });
-
-    // 3. Low stock count query
-    const lowStockCount = await prisma.product.count({
-      where: {
-        stock: { lt: 10 },
-        status: true
+    monthlySalesData.forEach(sale => {
+      const amt = Number(sale.amount || 0);
+      const date = new Date(sale.createdAt);
+      
+      monthlyTotal += amt;
+      if (date >= today) {
+        todayTotal += amt;
+      }
+      if (date >= week) {
+        weeklyTotal += amt;
       }
     });
 
+    // Run counts concurrently
+    const [pendingCount, completedCount, lowStockCount] = await Promise.all([
+      prisma.order.count({ where: { status: 'PENDING' } }),
+      prisma.order.count({ where: { status: 'COMPLETED' } }),
+      prisma.product.count({ where: { stock: { lt: 10 }, status: true } })
+    ]);
+
     res.json({
       revenue: {
-        today: Number(todaySales._sum.amount || 0),
-        weekly: Number(weeklySales._sum.amount || 0),
-        monthly: Number(monthlySales._sum.amount || 0)
+        today: todayTotal,
+        weekly: weeklyTotal,
+        monthly: monthlyTotal
       },
       orders: {
         pending: pendingCount,
@@ -88,7 +86,16 @@ router.get('/summary', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), asyn
 // 2. Get Chart & Analytics Data (Admin and Staff)
 router.get('/charts', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
   try {
-    // 1. Sales over the last 7 days (Daily Sales)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
+    // 1. Sales over the last 7 days (Daily Sales) - Fetch in a single query
+    const last7DaysSales = await prisma.sale.findMany({
+      where: { createdAt: { gte: sevenDaysAgo } },
+      select: { amount: true, createdAt: true }
+    });
+
     const dailySales = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
@@ -98,20 +105,17 @@ router.get('/charts', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async
       const end = new Date(d);
       end.setHours(23, 59, 59, 999);
 
-      const sales = await prisma.sale.aggregate({
-        where: {
-          createdAt: {
-            gte: start,
-            lte: end
-          }
-        },
-        _sum: { amount: true }
-      });
-
       const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+      const dailySum = last7DaysSales
+        .filter(sale => {
+          const date = new Date(sale.createdAt);
+          return date >= start && date <= end;
+        })
+        .reduce((sum, sale) => sum + Number(sale.amount || 0), 0);
+
       dailySales.push({
         date: dayName,
-        revenue: Number(sales._sum.amount || 0)
+        revenue: dailySum
       });
     }
 
@@ -146,33 +150,38 @@ router.get('/charts', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async
       };
     }).filter(c => c.value > 0);
 
-    // 3. Best Selling Products (Top 5)
-    const orderItems = await prisma.orderItem.findMany({
+    // 3. Best Selling Products (Top 5) - Optimized using groupBy
+    const bestSellersData = await prisma.orderItem.groupBy({
+      by: ['productId'],
       where: {
         order: {
           status: 'COMPLETED'
         }
       },
-      include: {
-        product: {
-          select: { name: true }
+      _sum: {
+        quantity: true
+      },
+      orderBy: {
+        _sum: {
+          quantity: 'desc'
         }
-      }
+      },
+      take: 5
     });
 
-    const productSalesMap = {};
-    orderItems.forEach(item => {
-      const name = item.product.name;
-      if (!productSalesMap[name]) {
-        productSalesMap[name] = 0;
-      }
-      productSalesMap[name] += item.quantity;
+    const productIds = bestSellersData.map(item => item.productId);
+    const productsInfo = await prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true, name: true }
     });
 
-    const bestSellers = Object.entries(productSalesMap)
-      .map(([name, quantity]) => ({ name, sales: quantity }))
-      .sort((a, b) => b.sales - a.sales)
-      .slice(0, 5);
+    const bestSellers = bestSellersData.map(item => {
+      const prod = productsInfo.find(p => p.id === item.productId);
+      return {
+        name: prod ? prod.name : 'Unknown',
+        sales: item._sum.quantity || 0
+      };
+    });
 
     // 4. Low stock products list
     const lowStockProducts = await prisma.product.findMany({
